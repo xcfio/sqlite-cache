@@ -1,17 +1,20 @@
 {
     "name": "sqlite-cache",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "A simple SQLite cache for Node.js applications",
     "author": "xcfio",
-    "homepage": "https://github.com/softwarexplus/sqlite-cache#readme",
+    "homepage": "https://github.com/xcfio/sqlite-cache#readme",
     "main": "out/index.js",
     "license": "MIT",
     "scripts": {
         "fmt": "prettier --config=.prettierrc --write src/",
         "lint": "prettier --config=.prettierrc --check src/",
         "build": "(node --eval \"require('node:fs').rmSync('out', { recursive: true, force: true })\" || true) && tsc",
-        "test": "tsc --noEmit",
-        "dev": "tsc --watch"
+        "dev": "tsc --watch",
+        "test": "(tsc --noEmit) && (vitest run)",
+        "test:run": "vitest run",
+        "test:watch": "vitest --watch",
+        "test:ui": "vitest --ui"
     },
     "keywords": [
         "cache",
@@ -19,11 +22,11 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/softwarexplus/sqlite-cache"
+        "url": "https://github.com/xcfio/sqlite-cache"
     },
     "bugs": {
-        "url": "https://github.com/softwarexplus/sqlite-cache/issues",
-        "email": "SoftwareXPlus@gmail.com"
+        "url": "https://github.com/xcfio/sqlite-cache/issues",
+        "email": "omarfaruksnx@gmail.com"
     },
     "funding": {
         "type": "patreon",
@@ -34,13 +37,13 @@
         "tag": "latest"
     },
     "dependencies": {
+        "@sinclair/typebox": "^0.34.41",
         "colorette": "^2.0.20",
         "fast-json-stringify": "^6.0.1"
     },
     "devDependencies": {
-        "@types/node": "^24.0.10"
-    },
-    "optionalDependencies": {
-        "sqlite3": "^5.1.7"
+        "@types/node": "^24.0.10",
+        "@vitest/ui": "3.2.4",
+        "vitest": "^3.2.4"
     }
 }

@@ -1,11 +1,10 @@
-import { Schema } from "fast-json-stringify"
+import { TSchema } from "@sinclair/typebox"
 
 export type CacheOptions = {
-    schema?: Schema
+    schema: TSchema
     path: string
     max?: number
     ttl?: number
-    driver?: "node" | "sqlite3"
     log?: boolean | { prefix?: string; timestamp?: boolean }
 }
 

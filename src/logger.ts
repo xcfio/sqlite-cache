@@ -1,5 +1,6 @@
+// Ref - logger.ts
 import { blue, green, yellow, red, gray, white } from "colorette"
-import { LoggerOptions } from "../type"
+import { LoggerOptions } from "./type"
 
 export class Logger {
     private ShouldLog: boolean
@@ -68,16 +69,16 @@ export class Logger {
             console.error(formattedMessage, ...args)
         }
 
-        const error = new SQLCError(message)
+        const error = new SqliteCacheError(message)
         if (args.length > 0) error.cause = args
 
         throw error
     }
 }
 
-class SQLCError extends Error {
+export class SqliteCacheError extends Error {
     constructor(message: string) {
         super(message)
-        this.name = "SQLCError"
+        this.name = "SqliteCacheError"
     }
 }
