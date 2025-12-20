@@ -43,7 +43,7 @@
     },
     "devDependencies": {
         "@types/node": "^25.0.0",
-        "@vitest/ui": "4.0.15",
+        "@vitest/ui": "4.0.16",
         "vitest": "^4.0.5"
     }
 }
