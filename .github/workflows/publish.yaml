@@ -3,6 +3,9 @@ name: Publish package
 on:
     release:
         types: created
+    push:
+        branches:
+            - main
 
 jobs:
     Publish:
@@ -15,6 +18,8 @@ jobs:
         steps:
             - name: Setup Action
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
             - name: Setup Node.js
               uses: actions/setup-node@v4
@@ -24,16 +29,61 @@ jobs:
 
             - name: Setup PNPM
               uses: pnpm/action-setup@v4
-              with:
-                  version: "latest"
+
+            - name: Check for changes
+              id: changes
+              run: |
+                  if git rev-parse --verify ${{ github.event.before }} > /dev/null 2>&1; then
+                    git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q '^src/' && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
+                  else
+                    echo "changed=true" >> $GITHUB_OUTPUT
+                  fi
 
             - name: Install dependencies
+              if: github.event_name == 'release' || (github.event_name == 'push' && steps.changes.outputs.changed == 'true')
               run: pnpm install --no-frozen-lockfile
 
             - name: Build
-              run: pnpm run build
+              if: github.event_name == 'release' || (github.event_name == 'push' && steps.changes.outputs.changed == 'true')
+              run: node --run build
 
-            - name: Publish
-              run: pnpm publish --provenance --no-git-checks
+            - name: Generate dev version
+              if: github.event_name == 'push' && steps.changes.outputs.changed == 'true'
+              run: |
+                  CURRENT_VERSION=$(node -p "require('./package.json').version")
+                  DEV_VERSION="${CURRENT_VERSION}-dev.$(date +'%Y%m%d%H%M%S')"
+                  npm version "$DEV_VERSION" --no-git-tag-version
+
+            - name: Deprecate old dev versions
+              if: github.event_name == 'push' && steps.changes.outputs.changed == 'true'
+              run: |
+                  PACKAGE_NAME=$(node -p "require('./package.json').name")
+                  npm view "$PACKAGE_NAME" versions --json | jq -r '.[]' | grep -E 'dev\.[0-9]+' | while read -r old_version; do
+                    echo "Deprecating $PACKAGE_NAME@$old_version"
+                    npm deprecate "$PACKAGE_NAME@$old_version" "Deprecated - use latest dev version" || true
+                  done
+              env:
+                  NODE_AUTH_TOKEN: ${{secrets.NODETOKEN}}
+
+            - name: Deprecate dev versions on release
+              if: github.event_name == 'release'
+              run: |
+                  PACKAGE_NAME=$(node -p "require('./package.json').name")
+                  npm view "$PACKAGE_NAME" versions --json | jq -r '.[]' | grep -E 'dev\.[0-9]+' | while read -r old_version; do
+                    echo "Deprecating $PACKAGE_NAME@$old_version"
+                    npm deprecate "$PACKAGE_NAME@$old_version" "Deprecated - superseded by stable release" || true
+                  done
+              env:
+                  NODE_AUTH_TOKEN: ${{secrets.NODETOKEN}}
+
+            - name: Publish release
+              if: github.event_name == 'release'
+              run: pnpm publish --provenance --access public --no-git-checks
+              env:
+                  NODE_AUTH_TOKEN: ${{secrets.NODETOKEN}}
+
+            - name: Publish dev
+              if: github.event_name == 'push' && steps.changes.outputs.changed == 'true'
+              run: pnpm publish --provenance --access public --no-git-checks --tag dev
               env:
                   NODE_AUTH_TOKEN: ${{secrets.NODETOKEN}}

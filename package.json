@@ -1,24 +1,25 @@
 {
     "name": "sqlite-cache",
-    "version": "0.0.2",
-    "description": "A simple SQLite cache for Node.js applications",
+    "version": "0.0.3",
+    "description": "A simple, TTL-aware, size-bounded persistent cache for Node.js",
     "author": "xcfio",
     "homepage": "https://github.com/xcfio/sqlite-cache#readme",
-    "main": "out/index.js",
+    "type": "commonjs",
     "license": "MIT",
+    "main": "./out/index.js",
     "scripts": {
-        "fmt": "prettier --config=.prettierrc --write src/",
-        "lint": "prettier --config=.prettierrc --check src/",
-        "build": "(node --eval \"require('node:fs').rmSync('out', { recursive: true, force: true })\" || true) && tsc",
+        "lint": "prettier --config=.prettierrc --check src",
+        "fmt": "prettier --config=.prettierrc --write src",
+        "test": "(tsc --noEmit) && (tsx src/index.test.ts)",
         "dev": "tsc --watch",
-        "test": "(tsc --noEmit) && (vitest run)",
-        "test:run": "vitest run",
-        "test:watch": "vitest --watch",
-        "test:ui": "vitest --ui"
+        "build": "tsc"
     },
     "keywords": [
+        "map",
         "cache",
-        "sqlite"
+        "sqlite",
+        "storage",
+        "node-sqlite"
     ],
     "repository": {
         "type": "git",
@@ -26,24 +27,20 @@
     },
     "bugs": {
         "url": "https://github.com/xcfio/sqlite-cache/issues",
-        "email": "omarfaruksnx@gmail.com"
+        "email": "omarfaruksxp@gmail.com"
     },
-    "funding": {
-        "type": "patreon",
-        "url": "https://www.patreon.com/xcfio"
-    },
+    "packageManager": "pnpm@10.33.0",
     "publishConfig": {
         "access": "public",
         "tag": "latest"
     },
+    "engines": {
+        "node": ">=22.5"
+    },
     "dependencies": {
-        "@sinclair/typebox": "^0.34.41",
-        "colorette": "^2.0.20",
-        "fast-json-stringify": "^6.0.1"
+        "node-sqlite-map": "^0.0.1"
     },
     "devDependencies": {
-        "@types/node": "^25.0.0",
-        "@vitest/ui": "4.1.2",
-        "vitest": "^4.0.5"
+        "@types/node": "^25.6.0"
     }
 }

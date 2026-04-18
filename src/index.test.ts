@@ -1,414 +1,179 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { SQLiteCache } from "../src/cache"
-import { Type } from "@sinclair/typebox"
-import { existsSync, unlinkSync } from "node:fs"
-import { join } from "node:path"
+import { test, describe, beforeEach, afterEach } from "node:test"
+import { SQLiteCache, SqliteCacheError } from "./index"
 
-// Test schema for user data
-const UserSchema = Type.Object({
-    id: Type.Number(),
-    name: Type.String(),
-    email: Type.String(),
-    active: Type.Boolean(),
-    metadata: Type.Optional(
-        Type.Object({
-            lastLogin: Type.String(),
-            preferences: Type.Record(Type.String(), Type.Any())
-        })
-    )
+import assert from "node:assert/strict"
+
+const DB_PATH = ":memory:"
+let cache: SQLiteCache<string, { name: string }>
+
+beforeEach(() => {
+    cache = new SQLiteCache({ path: DB_PATH, ttl: 1000, max: 3 })
 })
 
-type User = {
-    id: number
-    name: string
-    email: string
-    active: boolean
-    metadata?: {
-        lastLogin: string
-        preferences: Record<string, any>
-    }
-}
+afterEach(() => {
+    cache.clear()
+})
 
-describe("SQLiteCache", () => {
-    let cache: SQLiteCache<string, User>
-    const testDbPath = join(process.cwd(), "test-cache.db")
+// ─── Constructor ────────────────────────────────────────────────────────────
 
-    beforeEach(() => {
-        // Clean up any existing test database
-        if (existsSync(testDbPath)) {
-            unlinkSync(testDbPath)
-        }
-
-        cache = new SQLiteCache<string, User>({
-            path: testDbPath,
-            schema: UserSchema,
-            ttl: 1000, // 1 second for testing
-            max: 5,
-            log: false
-        })
+describe("constructor", () => {
+    test("throws if options missing", () => {
+        // @ts-ignore
+        assert.throws(() => new SQLiteCache(null), SqliteCacheError)
     })
 
-    afterEach(() => {
-        cache.close()
-        if (existsSync(testDbPath)) {
-            unlinkSync(testDbPath)
-        }
+    test("throws if path is missing", () => {
+        // @ts-ignore
+        assert.throws(() => new SQLiteCache({}), SqliteCacheError)
     })
 
-    describe("Constructor", () => {
-        it("should create cache with default options", () => {
-            const defaultCache = new SQLiteCache({
-                path: ":memory:",
-                schema: UserSchema
-            })
-            expect(defaultCache.ttl).toBe(60_000)
-            expect(defaultCache.max).toBe(100)
-            defaultCache.close()
-        })
+    test("applies defaults for ttl and max", () => {
+        const c = new SQLiteCache({ path: DB_PATH })
+        assert.equal(c.ttl, 60_000)
+        assert.equal(c.max, 100)
+        c.clear()
+    })
+})
 
-        it("should throw error when options are missing", () => {
-            expect(() => new SQLiteCache(null as any)).toThrow("Cache options are required")
-        })
+// ─── set / get ──────────────────────────────────────────────────────────────
 
-        it("should initialize with logging enabled", () => {
-            const loggedCache = new SQLiteCache({
-                path: ":memory:",
-                schema: UserSchema,
-                log: {
-                    prefix: "[TEST]",
-                    timestamp: true
-                }
-            })
-            expect(loggedCache.log).toBeDefined()
-            loggedCache.close()
-        })
+describe("set / get", () => {
+    test("stores and retrieves a value", () => {
+        cache.set("a", { name: "Kyle" })
+        assert.deepEqual(cache.get("a"), { name: "Kyle" })
     })
 
-    describe("Basic Operations", () => {
-        const testUser: User = {
-            id: 1,
-            name: "John Doe",
-            email: "john@example.com",
-            active: true,
-            metadata: {
-                lastLogin: "2024-01-01T10:00:00Z",
-                preferences: { theme: "dark", language: "en" }
-            }
-        }
-
-        it("should set and get a value", () => {
-            cache.set("user1", testUser)
-            const retrieved = cache.get("user1")
-
-            expect(retrieved).toEqual(testUser)
-        })
-
-        it("should return null for non-existent key", () => {
-            const retrieved = cache.get("nonexistent")
-            expect(retrieved).toBe(null)
-        })
-
-        it("should check if key exists", () => {
-            cache.set("user1", testUser)
-
-            expect(cache.has("user1")).toBe(true)
-            expect(cache.has("nonexistent")).toBe(false)
-        })
-
-        it("should delete a key", () => {
-            cache.set("user1", testUser)
-            expect(cache.has("user1")).toBe(true)
-
-            const deleted = cache.delete("user1")
-            expect(deleted).toBe(true)
-            expect(cache.has("user1")).toBe(false)
-        })
-
-        it("should return false when deleting non-existent key", () => {
-            const deleted = cache.delete("nonexistent")
-            expect(deleted).toBe(false)
-        })
-
-        it("should clear all entries", () => {
-            cache.set("user1", testUser)
-            cache.set("user2", { ...testUser, id: 2, name: "Jane Doe" })
-
-            expect(cache.size).toBe(2)
-            cache.clear()
-            expect(cache.size).toBe(0)
-        })
-
-        it("should return correct size", () => {
-            expect(cache.size).toBe(0)
-
-            cache.set("user1", testUser)
-            expect(cache.size).toBe(1)
-
-            cache.set("user2", { ...testUser, id: 2, name: "Jane Doe" })
-            expect(cache.size).toBe(2)
-        })
+    test("returns null for missing key", () => {
+        assert.equal(cache.get("missing"), null)
     })
 
-    describe("TTL (Time To Live)", () => {
-        it("should expire entries after TTL", async () => {
-            const shortTtlCache = new SQLiteCache<string, User>({
-                path: ":memory:",
-                schema: UserSchema,
-                ttl: 50, // 50ms
-                log: false
-            })
-
-            const testUser: User = {
-                id: 1,
-                name: "John Doe",
-                email: "john@example.com",
-                active: true
-            }
-
-            shortTtlCache.set("user1", testUser)
-            expect(shortTtlCache.has("user1")).toBe(true)
-
-            // Wait for expiration
-            await new Promise((resolve) => setTimeout(resolve, 100))
-
-            expect(shortTtlCache.has("user1")).toBe(false)
-            expect(shortTtlCache.get("user1")).toBe(null)
-
-            shortTtlCache.close()
-        })
-
-        it("should clean up expired entries on set", async () => {
-            const shortTtlCache = new SQLiteCache<string, User>({
-                path: ":memory:",
-                schema: UserSchema,
-                ttl: 50,
-                log: false
-            })
-
-            const testUser: User = {
-                id: 1,
-                name: "John Doe",
-                email: "john@example.com",
-                active: true
-            }
-
-            shortTtlCache.set("user1", testUser)
-
-            // Wait for expiration
-            await new Promise((resolve) => setTimeout(resolve, 100))
-
-            // Setting a new entry should clean up expired ones
-            shortTtlCache.set("user2", { ...testUser, id: 2 })
-
-            expect(shortTtlCache.has("user1")).toBe(false)
-            expect(shortTtlCache.has("user2")).toBe(true)
-
-            shortTtlCache.close()
-        })
+    test("returns null after TTL expires", async () => {
+        const c = new SQLiteCache({ path: DB_PATH, ttl: 50 })
+        c.set("x", { name: "temp" })
+        await new Promise((r) => setTimeout(r, 100))
+        assert.equal(c.get("x"), null)
+        c.clear()
     })
 
-    describe("Max Entries Limit", () => {
-        it("should enforce max entries limit", () => {
-            const limitedCache = new SQLiteCache<string, User>({
-                path: ":memory:",
-                schema: UserSchema,
-                max: 2,
-                log: false
-            })
-
-            const users = [
-                { id: 1, name: "User 1", email: "user1@example.com", active: true },
-                { id: 2, name: "User 2", email: "user2@example.com", active: true },
-                { id: 3, name: "User 3", email: "user3@example.com", active: true }
-            ]
-
-            users.forEach((user, index) => {
-                limitedCache.set(`user${index + 1}`, user)
-            })
-
-            expect(limitedCache.size).toBe(2)
-            expect(limitedCache.has("user1")).toBe(true)
-            expect(limitedCache.has("user2")).toBe(true)
-            expect(limitedCache.has("user3")).toBe(false)
-
-            limitedCache.close()
-        })
+    test("throws on invalid key", () => {
+        // @ts-ignore
+        assert.throws(() => cache.set("", { name: "x" }), SqliteCacheError)
     })
 
-    describe("Iteration Methods", () => {
-        beforeEach(() => {
-            const users = [
-                { id: 1, name: "Alice", email: "alice@example.com", active: true },
-                { id: 2, name: "Bob", email: "bob@example.com", active: false },
-                { id: 3, name: "Charlie", email: "charlie@example.com", active: true }
-            ]
-
-            users.forEach((user, index) => {
-                cache.set(`user${index + 1}`, user)
-            })
-        })
-
-        it("should iterate over keys", () => {
-            const keys = Array.from(cache.keys())
-            expect(keys).toHaveLength(3)
-            expect(keys).toEqual(expect.arrayContaining(["user1", "user2", "user3"]))
-        })
-
-        it("should iterate over values", () => {
-            const values = Array.from(cache.values())
-            expect(values).toHaveLength(3)
-            expect(values.every((v) => typeof v === "object" && "id" in v)).toBe(true)
-        })
-
-        it("should iterate over entries", () => {
-            const entries = Array.from(cache.entries())
-            expect(entries).toHaveLength(3)
-            expect(entries.every(([key, value]) => typeof key === "string" && typeof value === "object")).toBe(true)
-        })
-
-        it("should support forEach", () => {
-            const collected: Array<[string, User]> = []
-
-            cache.forEach((value, key) => {
-                collected.push([key, value])
-            })
-
-            expect(collected).toHaveLength(3)
-            expect(collected.every(([key, value]) => typeof key === "string" && typeof value === "object")).toBe(true)
-        })
-
-        it("should support Symbol.iterator", () => {
-            const entries = Array.from(cache)
-            expect(entries).toHaveLength(3)
-            expect(entries.every(([key, value]) => typeof key === "string" && typeof value === "object")).toBe(true)
-        })
+    test("throws on invalid value", () => {
+        // @ts-ignore
+        assert.throws(() => cache.set("k", null), SqliteCacheError)
     })
 
-    describe("Schema Validation", () => {
-        it("should work with valid data matching schema", () => {
-            const validUser: User = {
-                id: 1,
-                name: "Valid User",
-                email: "valid@example.com",
-                active: true
-            }
+    test("set returns this (chainable)", () => {
+        const result = cache.set("a", { name: "x" })
+        assert.equal(result, cache)
+    })
+})
 
-            expect(() => cache.set("valid", validUser)).not.toThrow()
-            expect(cache.get("valid")).toEqual(validUser)
-        })
+// ─── has ────────────────────────────────────────────────────────────────────
 
-        it("should handle optional fields correctly", () => {
-            const userWithMetadata: User = {
-                id: 1,
-                name: "User With Metadata",
-                email: "user@example.com",
-                active: true,
-                metadata: {
-                    lastLogin: "2024-01-01T10:00:00Z",
-                    preferences: { theme: "light" }
-                }
-            }
-
-            const userWithoutMetadata: User = {
-                id: 2,
-                name: "User Without Metadata",
-                email: "user2@example.com",
-                active: false
-            }
-
-            cache.set("with-metadata", userWithMetadata)
-            cache.set("without-metadata", userWithoutMetadata)
-
-            expect(cache.get("with-metadata")).toEqual(userWithMetadata)
-            expect(cache.get("without-metadata")).toEqual(userWithoutMetadata)
-        })
+describe("has", () => {
+    test("returns true for live entry", () => {
+        cache.set("a", { name: "x" })
+        assert.equal(cache.has("a"), true)
     })
 
-    describe("Database Connection Handling", () => {
-        it("should handle operations gracefully when db is null", () => {
-            const nullDbCache = new SQLiteCache<string, User>({
-                path: ":memory:",
-                schema: UserSchema,
-                log: false
-            })
-
-            // Force db to null to simulate connection failure
-            nullDbCache.db = null
-
-            const testUser: User = {
-                id: 1,
-                name: "Test User",
-                email: "test@example.com",
-                active: true
-            }
-
-            // Should not throw errors
-            expect(() => {
-                nullDbCache.set("test", testUser)
-                nullDbCache.get("test")
-                nullDbCache.has("test")
-                nullDbCache.delete("test")
-                nullDbCache.clear()
-            }).not.toThrow()
-
-            expect(nullDbCache.size).toBe(0)
-            expect(Array.from(nullDbCache.keys())).toEqual([])
-            expect(Array.from(nullDbCache.values())).toEqual([])
-            expect(Array.from(nullDbCache.entries())).toEqual([])
-        })
+    test("returns false for missing key", () => {
+        assert.equal(cache.has("nope"), false)
     })
 
-    describe("Edge Cases", () => {
-        it("should handle non-empty string keys only", () => {
-            const testUser: User = {
-                id: 1,
-                name: "Test User",
-                email: "test@example.com",
-                active: true
-            }
+    test("returns false for expired entry", async () => {
+        const c = new SQLiteCache({ path: DB_PATH, ttl: 50 })
+        c.set("x", { name: "y" })
+        await new Promise((r) => setTimeout(r, 100))
+        assert.equal(c.has("x"), false)
+        c.clear()
+    })
+})
 
-            // Empty string should throw an error based on your validation
-            expect(() => cache.set("", testUser)).toThrow("Cache key must be a valid string")
+// ─── delete ─────────────────────────────────────────────────────────────────
 
-            // Valid non-empty string should work
-            cache.set("valid-key", testUser)
-            expect(cache.has("valid-key")).toBe(true)
-            expect(cache.get("valid-key")).toEqual(testUser)
-        })
+describe("delete", () => {
+    test("removes an existing key", () => {
+        cache.set("a", { name: "x" })
+        assert.equal(cache.delete("a"), true)
+        assert.equal(cache.get("a"), null)
+    })
 
-        it("should handle complex nested objects", () => {
-            const complexUser: User = {
-                id: 1,
-                name: "Complex User",
-                email: "complex@example.com",
-                active: true,
-                metadata: {
-                    lastLogin: "2024-01-01T10:00:00Z",
-                    preferences: {
-                        theme: "dark",
-                        notifications: {
-                            email: true,
-                            push: false,
-                            sms: true
-                        },
-                        features: ["feature1", "feature2"],
-                        settings: {
-                            autoSave: true,
-                            timeout: 300
-                        }
-                    }
-                }
-            }
+    test("returns false for non-existent key", () => {
+        assert.equal(cache.delete("ghost"), false)
+    })
+})
 
-            cache.set("complex", complexUser)
-            const retrieved = cache.get("complex")
+// ─── clear ──────────────────────────────────────────────────────────────────
 
-            expect(retrieved).toEqual(complexUser)
-            expect(retrieved?.metadata?.preferences.notifications).toEqual({
-                email: true,
-                push: false,
-                sms: true
-            })
-        })
+describe("clear", () => {
+    test("removes all entries", () => {
+        cache.set("a", { name: "1" })
+        cache.set("b", { name: "2" })
+        cache.clear()
+        assert.equal(cache.size, 0)
+    })
+})
+
+// ─── size ───────────────────────────────────────────────────────────────────
+
+describe("size", () => {
+    test("counts only live entries", async () => {
+        const c = new SQLiteCache({ path: DB_PATH, ttl: 50 })
+        c.set("a", { name: "1" })
+        c.set("b", { name: "2" })
+        assert.equal(c.size, 2)
+        await new Promise((r) => setTimeout(r, 100))
+        assert.equal(c.size, 0)
+        c.clear()
+    })
+})
+
+// ─── iterators ──────────────────────────────────────────────────────────────
+
+describe("keys / values / entries / forEach", () => {
+    test("keys() yields live keys", () => {
+        cache.set("a", { name: "1" })
+        cache.set("b", { name: "2" })
+        const keys = [...cache.keys()]
+        assert.deepEqual(keys.sort(), ["a", "b"])
+    })
+
+    test("values() yields live values", () => {
+        cache.set("a", { name: "omar" })
+        const vals = [...cache.values()]
+        assert.deepEqual(vals, [{ name: "omar" }])
+    })
+
+    test("entries() yields [key, value] pairs", () => {
+        cache.set("a", { name: "x" })
+        const entries = [...cache.entries()]
+        assert.deepEqual(entries, [["a", { name: "x" }]])
+    })
+
+    test("forEach iterates live entries", () => {
+        cache.set("a", { name: "1" })
+        const seen: string[] = []
+        cache.forEach((_, k) => seen.push(k))
+        assert.deepEqual(seen, ["a"])
+    })
+
+    test("[Symbol.iterator] works", () => {
+        cache.set("z", { name: "last" })
+        const result = [...cache]
+        assert.deepEqual(result, [["z", { name: "last" }]])
+    })
+})
+
+// ─── SqliteCacheError ───────────────────────────────────────────────────────
+
+describe("SqliteCacheError", () => {
+    test("has correct name", () => {
+        const err = new SqliteCacheError("oops")
+        assert.equal(err.name, "SqliteCacheError")
+        assert.equal(err.message, "oops")
+        assert.ok(err instanceof Error)
     })
 })

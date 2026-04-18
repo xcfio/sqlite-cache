@@ -1,1 +1,8 @@
-*test.ts
+*.test*.ts
+*.test*.js
+.github/
+src/
+.gitignore
+.prettierignore
+.prettierrc
+tsconfig.json
